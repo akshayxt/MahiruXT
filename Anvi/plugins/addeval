@@ -1,0 +1,107 @@
+import random
+from typing import List
+from motor.motor_asyncio import AsyncIOMotorClient
+from pyrogram import filters
+from pyrogram.types import Message, User
+from Anvi import MONGO_DB_URI
+from pyrogram import Client
+from Anvi import app
+OWNER_ID = 6753468481
+
+mongo_client = AsyncIOMotorClient(MONGO_DB_URI)
+mongodb = mongo_client.Anvi
+evalersdb = mongodb.evalers
+
+async def get_evalers() -> List[int]:
+    try:
+        evalers_doc = await evalersdb.find_one({"eval": "eval"})
+        if evalers_doc:
+            return evalers_doc.get("evalers", [])
+        else:
+            return []
+    except Exception as e:
+        print(f"Error fetching evalers: {str(e)}")
+        return []
+
+async def add_eval(user_id: int) -> bool:
+    try:
+        evalers = await get_evalers()
+        if user_id in evalers:
+            return False  # User is already a evaler
+        evalers.append(user_id)
+        await evalersdb.update_one(
+            {"eval": "eval"}, {"$set": {"evalers": evalers}}, upsert=True
+        )
+        return True
+    except Exception as e:
+        print(f"Error adding eval: {str(e)}")
+        return False
+
+async def remove_eval(user_id: int) -> bool:
+    try:
+        evalers = await get_evalers()
+        if user_id not in evalers:
+            return False  # User is not a evaler
+        evalers.remove(user_id)
+        await evalersdb.update_one(
+            {"eval": "eval"}, {"$set": {"evalers": evalers}}, upsert=True
+        )
+        return True
+    except Exception as e:
+        print(f"Error removing eval: {str(e)}")
+        return False
+
+async def extract_user(m: Message) -> User:
+    try:
+        if m.reply_to_message:
+            return m.reply_to_message.from_user
+        msg_entities = m.entities[1] if m.text.startswith("/") else m.entities[0]
+        user_id = msg_entities.user.id if msg_entities.type == "text_mention" else int(
+            m.command[1]) if m.command[1].isdecimal() else m.command[1]
+        return await app.get_users(user_id)
+    except Exception as e:
+        print(f"Error extracting user: {str(e)}")
+        return None
+
+@app.on_message(filters.command(["addeval"]) & filters.user(OWNER_ID))
+async def useradd(client, message: Message):
+    if not message.reply_to_message and len(message.command) != 2:
+        return await message.reply_text("Invalid usage. Use /addeval [user]")
+    user = await extract_user(message)
+    if user:
+        evalers = await get_evalers()
+        if user.id in evalers:
+            return await message.reply_text("User is already a evaler.")
+        added = await add_eval(user.id)
+        if added:
+            await message.reply_text(f"Added {user.first_name} as a evaler.")
+        else:
+            await message.reply_text("Failed to add user as a evaler.")
+    else:
+        await message.reply_text("User not found.")
+
+@app.on_message(filters.command(["deleval", "rmeval"]) & filters.user(OWNER_ID))
+async def userdel(client, message: Message):
+    if not message.reply_to_message and len(message.command) != 2:
+        return await message.reply_text("Invalid usage. Use /deleval [user]")
+    user = await extract_user(message)
+    if user:
+        evalers = await get_evalers()
+        if user.id not in evalers:
+            return await message.reply_text("User is not a evaler.")
+        removed = await remove_eval(user.id)
+        if removed:
+            await message.reply_text(f"Removed {user.first_name} from evalers.")
+        else:
+            await message.reply_text("Failed to remove user from evalers.")
+    else:
+        await message.reply_text("User not found.")
+
+@app.on_message(filters.command(["evallist", "listeval", "evalers"]))
+async def evalers_list(client, message: Message):
+    evalers = await get_evalers()
+    if evalers:
+        evaler_list = "\n".join(str(user_id) for user_id in evalers)
+        await message.reply_text(f"evalers:\n{evaler_list}")
+    else:
+        await message.reply_text("No evalers found.")

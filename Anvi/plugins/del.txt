@@ -1,0 +1,29 @@
+import asyncio
+from pyrogram import Client, filters
+from Anvi import (
+    LOGGER,
+    OWNER_ID,
+    SUPPORT_CHAT,
+    TOKEN,
+    StartTime )
+from Anvi import app
+
+# Create a global variable to store the function status
+dellcmd_status = True
+
+@app.on_message(filters.text & filters.incoming)
+async def delete_slash_messages(client, message):
+    global dellcmd_status # Use the global variable
+    if message.text == "/delcmd on": # Check if the user wants to enable the function
+        dellcmd_status = True # Set the status to True
+        await message.reply("Function enabled.") # Send a confirmation message
+    elif message.text == "/delcmd off": # Check if the user wants to disable the function
+        dellcmd_status = False # Set the status to False
+        await message.reply("Function disabled.") # Send a confirmation message
+    elif "/" in message.text and dellcmd_status: # Check if the message contains a slash and the function is enabled
+        # Send a warning message
+        warning_message = await message.reply("Your Command Will be delete in 3 sec.")
+        # Schedule the message deletion after 3 seconds
+        await asyncio.sleep(3)
+        await message.delete()
+        await warning_message.delete()
